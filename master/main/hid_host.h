@@ -1,0 +1,1 @@
+void hid_host_main_task(QueueHandle_t mouse_q, QueueHandle_t kb_q);

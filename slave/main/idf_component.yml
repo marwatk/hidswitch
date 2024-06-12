@@ -1,0 +1,8 @@
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/led_strip: "==2.4.1"
+  usb_host_hid: "==1.0.1"
+  espressif/esp_tinyusb: "==1.4.4"
+  espressif/tinyusb: "==0.15.0~9"
+  idf: "==5.2.1"
+

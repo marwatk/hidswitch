@@ -1,0 +1,5 @@
+dependencies:
+  espressif/led_strip: "^2.4.1"
+  usb_host_hid: "^1.0.1"
+  espressif/esp_tinyusb: "^1.1"
+  idf: "^5.2.1"
