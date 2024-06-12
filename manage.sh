@@ -7,8 +7,6 @@ readonly ROOT_DIR
 
 readonly DEVICE_FILE="${ROOT_DIR}/devices.txt"
 readonly FLASH_HOST="${FLASH_HOST:-avrdude}"
-readonly MAIN="${ROOT_DIR}/main/main.h"
-# esp_rfc2217_server.py -v -p 4000 /dev/ttyACM0
 
 function copy_source {
   local src="$1"

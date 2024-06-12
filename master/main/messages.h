@@ -7,7 +7,6 @@
 
 typedef struct LedMessage LedMessage;
 typedef struct Message Message;
-typedef struct KeyboardReport KeyboardReport;
 
 struct LedMessage {
     uint8_t red;

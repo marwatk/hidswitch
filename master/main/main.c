@@ -29,38 +29,19 @@
 
 #include "messages.h"
 #include "master.h"
-#include "slave.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
 #include "main.h"
 
-// S3 is the only supported board because: usb host, so we just hardcode this
 #define LED_GPIO 48
-
-
 
 static led_strip_handle_t led_strip;
 static QueueHandle_t led_queue;
 static QueueHandle_t send_queue;
 
 static char *TAG = "MAIN";
-
-
-/**
- * @brief test function to show buffer
- */
-static void disp_buf(uint8_t *buf, int len) {
-    int i;
-    for (i = 0; i < len; i++) {
-        printf("%02x ", buf[i]);
-        if ((i + 1) % 16 == 0) {
-            printf("\n");
-        }
-    }
-    printf("\n");
-}
 
 static void configure_led(void) {
     ESP_LOGI(TAG, "Initializing LED");
@@ -122,13 +103,5 @@ void app_main(void) {
     led_queue = xQueueCreate(10, sizeof(LedMessage));
 
     xTaskCreate(led_task, "led_task", 1024 * 2, (void *)0, 10, NULL);
-    if (DEVICE_ID == 0) {
-        //xTaskCreate(led_test, "led_test", 1024 * 2, (void *)0, 10, NULL);
-        master_main(send_queue);
-    }
-    else {
-        slave_main(DEVICE_ID - 1, led_queue);
-    }
-    
-
+    master_main(send_queue);
 }

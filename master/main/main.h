@@ -1,6 +1,5 @@
 #define ESP_SLAVE_BASE_ADDR 0x28             /*!< ESP32 slave address, you can set any 7bit value */
 
-#define DEVICE_ID 0
 #define NUM_SLAVES 3
 
 typedef struct {
