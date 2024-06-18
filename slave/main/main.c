@@ -155,7 +155,7 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 }
 
 void send_led_state() {
-    // i2c_slave_write_buffer(i2c_slave_port, &led_state, sizeof(hid_keyboard_output_report_boot_t), 0);
+    i2c_slave_write_buffer(i2c_slave_port, &led_state, sizeof(hid_keyboard_output_report_boot_t), 0);
 }
 
 // Invoked when received SET_REPORT control request or
