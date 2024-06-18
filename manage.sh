@@ -38,6 +38,7 @@ function run {
   fi
   docker run \
     --rm \
+    -it \
     -v "${build_folder}:/project" \
     --name "hidswitch_${device}" \
     -w /project \

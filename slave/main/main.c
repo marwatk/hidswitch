@@ -12,7 +12,6 @@
 #include "tinyusb.h"
 #include "class/hid/hid_device.h"
 #include "driver/i2c.h"
-#include "driver/gpio.h"
 #include "led_strip.h"
 #include "messages.h"
 
@@ -24,6 +23,7 @@
 static led_strip_handle_t led_strip;
 
 static char *TAG = "SLV0";
+static int i2c_slave_port = 0;
 static uint16_t device_address;
 uint8_t *receive_buffer;
 
@@ -85,6 +85,24 @@ typedef struct {
     uint8_t key[6];
 } __attribute__((packed)) hid_keyboard_input_report_boot_t;
 
+typedef struct {
+    union {
+        struct {
+            uint8_t num_lock:    1;
+            uint8_t caps_lock:   1;
+            uint8_t scroll_lock: 1;
+            uint8_t compose:     1;
+            uint8_t kana:        1;
+            uint8_t reserved1:    1;
+            uint8_t reserved2:    1;
+            uint8_t tud_mounted: 1;
+        };
+        uint8_t val;
+    } led_state;
+} __attribute__((packed)) hid_keyboard_output_report_boot_t;
+
+hid_keyboard_output_report_boot_t led_state = { 0 };
+
 /**
  * @brief String descriptor
  */
@@ -136,22 +154,42 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
     return 0;
 }
 
+void send_led_state() {
+    // i2c_slave_write_buffer(i2c_slave_port, &led_state, sizeof(hid_keyboard_output_report_boot_t), 0);
+}
+
 // Invoked when received SET_REPORT control request or
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
 {
     ESP_LOGI(TAG, "SET_REPORT: %d, %d, %d", report_id, report_type, bufsize);
+    if ( bufsize == 1 ) {
+        hid_keyboard_output_report_boot_t *out = buffer;
+        ESP_LOGI(TAG, "SET_REPORT data: num: %d, caps: %d, scroll: %d",
+            out->led_state.num_lock,
+            out->led_state.caps_lock,
+            out->led_state.scroll_lock );
+        led_state.led_state.num_lock = out->led_state.num_lock;
+        led_state.led_state.caps_lock = out->led_state.caps_lock;
+        led_state.led_state.scroll_lock = out->led_state.scroll_lock;
+        send_led_state();
+    }
 }
-
-#define DISTANCE_MAX        125
-#define DELTA_SCALAR        5
 
 void dispatch(uint8_t message_type, uint8_t *data, uint8_t len) {
     ESP_LOGD(TAG, "Recv: %d[%d]", message_type, len);
     if(!tud_mounted()) {
+        if ( led_state.led_state.tud_mounted ) {
+            led_state.led_state.tud_mounted = 0;
+            send_led_state();
+        }
         led_strip_set_pixel(led_strip, 0, 16, 0, 0);
         led_strip_refresh(led_strip);
         return;
+    }
+    if (!led_state.led_state.tud_mounted) {
+        led_state.led_state.tud_mounted = 1;
+        send_led_state();
     }
     switch (message_type) {
         case MESSAGE_TYPE_LED:
@@ -252,11 +290,11 @@ void device_app_main(void)
         .slave.slave_addr = device_address,      // address of your project
         .clk_flags = 0,
     };
-    int i2c_slave_port = 0;
 
     ESP_ERROR_CHECK(i2c_param_config(i2c_slave_port, &conf_slave));
-    ESP_ERROR_CHECK(i2c_driver_install(i2c_slave_port, conf_slave.mode, I2C_SLAVE_RX_BUF_LEN, I2C_SLAVE_TX_BUF_LEN, 0));
-    
+    ESP_ERROR_CHECK(i2c_driver_install(i2c_slave_port, conf_slave.mode, I2C_SLAVE_RX_BUF_LEN, sizeof(hid_keyboard_output_report_boot_t), 0));
+    send_led_state();
+
     ESP_LOGI(TAG, "Slave init successful");
 
     led_strip_set_pixel(led_strip, 0, 0, 16, 16);
@@ -274,6 +312,7 @@ void device_app_main(void)
         message_length = receive_buffer[1];
         if (message_length > 0) {
             read = i2c_slave_read_buffer(i2c_slave_port, receive_buffer, message_length, 50 / portTICK_PERIOD_MS);
+            send_led_state();
         }
         dispatch(message_type, receive_buffer, message_length);
         // ESP_LOGI(TAG, "Received %d, %d", message_type, message_length);

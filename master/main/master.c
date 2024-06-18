@@ -42,6 +42,24 @@ static int8_t inactive_mouse_y = INACTIVE_MOUSE_BOUNDING_BOX / 2;
 static hid_mouse_input_report_boot_extended_t empty_mouse_report = { 0 };
 static hid_keyboard_input_report_boot_t empty_kb_report = { 0 };
 
+typedef struct {
+    union {
+        struct {
+            uint8_t num_lock:    1;
+            uint8_t caps_lock:   1;
+            uint8_t scroll_lock: 1;
+            uint8_t compose:     1;
+            uint8_t kana:        1;
+            uint8_t reserved1:    1;
+            uint8_t reserved2:    1;
+            uint8_t tud_mounted: 1;
+        };
+        uint8_t val;
+    } led_state;
+} __attribute__((packed)) hid_keyboard_output_report_boot_t;
+
+hid_keyboard_output_report_boot_t states[NUM_SLAVES] = { 0 };
+
 static void master_sender_task(QueueHandle_t send_queue) {
     // if( xQueueSendToBack( xQueue1, ( void * ) &ulVar, ( TickType_t ) 10 ) != pdPASS )
     // {
@@ -49,6 +67,7 @@ static void master_sender_task(QueueHandle_t send_queue) {
     // }
     Message msg;
     esp_err_t err;
+    uint8_t buf[512];
     while(1) {
         if ( xQueueReceive( send_queue, &msg, portMAX_DELAY ) == pdTRUE) {
             esp_err_t ret;
@@ -73,20 +92,32 @@ static void master_sender_task(QueueHandle_t send_queue) {
                     mouse_report->buttons.button8);
             }
             
+            hid_keyboard_output_report_boot_t new_state = { 0 };
+
             i2c_master_write_byte(cmd, slave_addr << 1 | WRITE_BIT, ACK_CHECK_EN);
             i2c_master_write_byte(cmd, msg.type, 0);
             i2c_master_write_byte(cmd, msg.len, 0);
             i2c_master_write(cmd, msg.data, msg.len, ACK_CHECK_EN);
+            //i2c_master_read_byte(cmd, &new_state, NACK_VAL);
             i2c_master_stop(cmd);
-            
             err = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
+
             if ( err != ESP_OK) {
-                ESP_LOGD(TAG, "Err i2c send to %d: %d", msg.slave, err);
+                ESP_LOGI(TAG, "Err i2c send to %d: %d", msg.slave, err);
             }
             else {
                 ESP_LOGD(TAG, "i2c send to %d: %d (%d) [0]: %x", msg.slave, msg.type, msg.len, ((uint8_t*)msg.data)[0]);
             }
             i2c_cmd_link_delete(cmd);            
+            if (new_state.led_state.val != states[msg.slave].led_state.val) {
+                ESP_LOGI(TAG, "New state[%d]: num: %d, caps: %d, scroll: %d, connected: %d",
+                    msg.slave,
+                    new_state.led_state.num_lock,
+                    new_state.led_state.caps_lock,
+                    new_state.led_state.scroll_lock,
+                    new_state.led_state.tud_mounted );
+                states[msg.slave] = new_state;
+            }
         }
     }
 }

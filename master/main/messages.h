@@ -2,6 +2,7 @@
 #define MESSAGE_TYPE_LED 1
 #define MESSAGE_TYPE_KB 2
 #define MESSAGE_TYPE_MOUSE 3
+#define MESSAGE_TYPE_KB_LEDS 4
 
 #define MAX_DATA_LEN 10
 

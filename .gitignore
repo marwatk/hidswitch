@@ -1,3 +1,4 @@
 managed_components
 build
 .docker_build
+.vscode

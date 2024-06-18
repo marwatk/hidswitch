@@ -2,6 +2,7 @@
 #define MESSAGE_TYPE_LED 1
 #define MESSAGE_TYPE_KB 2
 #define MESSAGE_TYPE_MOUSE 3
+#define MESSAGE_TYPE_KB_LEDS 4
 
 typedef struct LedMessage LedMessage;
 typedef struct Message Message;
