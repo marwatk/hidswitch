@@ -163,7 +163,7 @@ void send_led_state() {
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
 {
     ESP_LOGI(TAG, "SET_REPORT: %d, %d, %d", report_id, report_type, bufsize);
-    if ( bufsize == 1 ) {
+    if ( report_id == 0x01 && report_type == 0x02 && bufsize == 1 ) {
         hid_keyboard_output_report_boot_t *out = buffer;
         ESP_LOGI(TAG, "SET_REPORT data: num: %d, caps: %d, scroll: %d",
             out->led_state.num_lock,
@@ -178,26 +178,18 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
 
 void dispatch(uint8_t message_type, uint8_t *data, uint8_t len) {
     ESP_LOGD(TAG, "Recv: %d[%d]", message_type, len);
-    if(!tud_mounted()) {
-        if ( led_state.led_state.tud_mounted ) {
-            led_state.led_state.tud_mounted = 0;
-            send_led_state();
-        }
-        led_strip_set_pixel(led_strip, 0, 16, 0, 0);
-        led_strip_refresh(led_strip);
-        return;
-    }
-    if (!led_state.led_state.tud_mounted) {
-        led_state.led_state.tud_mounted = 1;
-        send_led_state();
-    }
+
     switch (message_type) {
         case MESSAGE_TYPE_LED:
             LedMessage *ledMsg = (LedMessage*)data;
+            ESP_LOGI(TAG, "Led: %d,%d,%d", ledMsg->red, ledMsg->green, ledMsg->blue);
             led_strip_set_pixel(led_strip, 0, ledMsg->red, ledMsg->green, ledMsg->blue);
             led_strip_refresh(led_strip);
             break;
         case MESSAGE_TYPE_KB:
+            if(!tud_mounted()) {
+                return;
+            }
             hid_keyboard_input_report_boot_t *kb_report = (hid_keyboard_input_report_boot_t*)data;
             ESP_LOGI(TAG, "Keyboard: %d%d%d%d%d%d%d%d %2x %2x %2x %2x %2x %2x",     
                 kb_report->modifier.left_ctr,
@@ -221,6 +213,9 @@ void dispatch(uint8_t message_type, uint8_t *data, uint8_t len) {
             }
             break;
         case MESSAGE_TYPE_MOUSE:
+            if(!tud_mounted()) {
+                return;
+            }
             hid_mouse_input_report_boot_extended_t *mouse_report = (hid_mouse_input_report_boot_extended_t*)data;
             //tud_hid_n_report(0, HID_ITF_PROTOCOL_MOUSE, data, len);
             while (!tud_hid_mouse_report(HID_ITF_PROTOCOL_MOUSE, 
@@ -292,7 +287,7 @@ void device_app_main(void)
     };
 
     ESP_ERROR_CHECK(i2c_param_config(i2c_slave_port, &conf_slave));
-    ESP_ERROR_CHECK(i2c_driver_install(i2c_slave_port, conf_slave.mode, I2C_SLAVE_RX_BUF_LEN, sizeof(hid_keyboard_output_report_boot_t), 0));
+    ESP_ERROR_CHECK(i2c_driver_install(i2c_slave_port, conf_slave.mode, I2C_SLAVE_RX_BUF_LEN, sizeof(hid_keyboard_output_report_boot_t) * 5, 0));
     send_led_state();
 
     ESP_LOGI(TAG, "Slave init successful");
@@ -312,6 +307,14 @@ void device_app_main(void)
         message_length = receive_buffer[1];
         if (message_length > 0) {
             read = i2c_slave_read_buffer(i2c_slave_port, receive_buffer, message_length, 50 / portTICK_PERIOD_MS);
+            if(!tud_mounted() && led_state.led_state.tud_mounted) {
+                ESP_LOGI(TAG, "unmounted");
+                led_state.led_state.tud_mounted = 0;
+            }
+            else if (tud_mounted() && !led_state.led_state.tud_mounted) {
+                ESP_LOGI(TAG, "mounted");
+                led_state.led_state.tud_mounted = 1;
+            }
             send_led_state();
         }
         dispatch(message_type, receive_buffer, message_length);

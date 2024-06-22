@@ -10,6 +10,7 @@
 #include "freertos/queue.h"
 #include "main.h"
 #include "usb/hid_usage_keyboard.h"
+#include <time.h>
 
 #define I2C_MASTER_SCL_IO 9               /*!< gpio number for I2C master clock */
 #define I2C_MASTER_SDA_IO 8               /*!< gpio number for I2C master data  */
@@ -33,6 +34,7 @@ static HidQueues hid_queues;
 static QueueHandle_t send_queue;
 
 static uint8_t meta_modifiers = 0x11; // Left ctrl + Right ctrl
+static uint8_t left_ctrl_only_modifier = 0x1; 
 
 #define INACTIVE_MOUSE_BOUNDING_BOX 20
 
@@ -41,6 +43,9 @@ static int8_t inactive_mouse_y = INACTIVE_MOUSE_BOUNDING_BOX / 2;
 
 static hid_mouse_input_report_boot_extended_t empty_mouse_report = { 0 };
 static hid_keyboard_input_report_boot_t empty_kb_report = { 0 };
+
+static int ctrl_taps = 0;
+static clock_t ctrl_tap_time;
 
 typedef struct {
     union {
@@ -92,11 +97,43 @@ static esp_err_t __attribute__((unused)) i2c_master_read_slave(i2c_port_t i2c_nu
     return ret;
 }
 
+static void update_leds() {
+    Message msg;
+    for( int i = 0; i < NUM_SLAVES; i++ ) {
+        msg.slave = i;
+        msg.type = MESSAGE_TYPE_LED;
+        msg.len = sizeof(LedMessage);
+        if ( !states[i].led_state.tud_mounted ) {
+            ((LedMessage*)msg.data)->green = 0;
+            ((LedMessage*)msg.data)->red = 12;
+            ((LedMessage*)msg.data)->blue = 0;
+        }
+        else if ( i == active_slave ) {
+            ((LedMessage*)msg.data)->green = 12;
+            ((LedMessage*)msg.data)->red = 0;
+            ((LedMessage*)msg.data)->blue = 0;
+        }
+        else {
+            ((LedMessage*)msg.data)->green = 0;
+            ((LedMessage*)msg.data)->red = 0;
+            ((LedMessage*)msg.data)->blue = 12;
+        }
+        xQueueSendToBack(send_queue, &msg, 0);
+    }
+}
+
+static void on_state(uint8_t slave_idx, hid_keyboard_output_report_boot_t new_state) {
+    ESP_LOGI(TAG, "S[%d]:n%d,c%ds%dt%d",
+        slave_idx,
+        new_state.led_state.num_lock,
+        new_state.led_state.caps_lock,
+        new_state.led_state.scroll_lock,
+        new_state.led_state.tud_mounted );
+    states[slave_idx] = new_state;
+    update_leds();
+}
+
 static void master_sender_task(QueueHandle_t send_queue) {
-    // if( xQueueSendToBack( xQueue1, ( void * ) &ulVar, ( TickType_t ) 10 ) != pdPASS )
-    // {
-         // Failed to post the message, even after 10 ticks.
-    // }
     Message msg;
     esp_err_t err;
     uint8_t *buf = malloc(512);
@@ -127,7 +164,7 @@ static void master_sender_task(QueueHandle_t send_queue) {
             memcpy(&buf[2], msg.data, msg.len);
             err = i2c_master_write_slave(I2C_MASTER_NUM, slave_addr, buf, msg.len + 2);
             if ( err != ESP_OK) {
-                ESP_LOGI(TAG, "Err i2c send to %d: %d", msg.slave, err);
+                ESP_LOGD(TAG, "Err i2c send to %d: %d", msg.slave, err);
             }
             else {
                 ESP_LOGD(TAG, "i2c send to %d: %d (%d) [0]: %x", msg.slave, msg.type, msg.len, ((uint8_t*)msg.data)[0]);
@@ -135,39 +172,13 @@ static void master_sender_task(QueueHandle_t send_queue) {
             hid_keyboard_output_report_boot_t new_state = { 0 };
             err = i2c_master_read_slave(I2C_MASTER_NUM, slave_addr, &new_state, sizeof(hid_keyboard_output_report_boot_t));
             if ( err != ESP_OK) {
-                ESP_LOGI(TAG, "Err i2c read from to %d: %d", msg.slave, err);
+                ESP_LOGD(TAG, "Err i2c read from to %d: %d", msg.slave, err);
             }
             else {
                 if (new_state.led_state.val != states[msg.slave].led_state.val) {
-                    ESP_LOGI(TAG, "New state[%d]: num: %d, caps: %d, scroll: %d, connected: %d",
-                        msg.slave,
-                        new_state.led_state.num_lock,
-                        new_state.led_state.caps_lock,
-                        new_state.led_state.scroll_lock,
-                        new_state.led_state.tud_mounted );
-                    states[msg.slave] = new_state;
+                    on_state(msg.slave, new_state);
                 }
             }
-            /*
-            i2c_master_write_byte(cmd, slave_addr << 1 | WRITE_BIT, ACK_CHECK_EN);
-            i2c_master_write_byte(cmd, msg.type, 0);
-            i2c_master_write_byte(cmd, msg.len, 0);
-            i2c_master_write(cmd, msg.data, msg.len, ACK_CHECK_EN);
-            //i2c_master_read_byte(cmd, &new_state, NACK_VAL);
-            i2c_master_stop(cmd);
-            err = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
-            i2c_cmd_link_delete(cmd);
-            */
-
-
-            /*
-            i2c_cmd_handle_t cmd = i2c_cmd_link_create();    
-            i2c_master_start(cmd);
-            i2c_master_write_byte(cmd, slave_addr << 1 | READ_BIT, ACK_CHECK_EN);
-            i2c_master_read_
-
-
-            */
         }
     }
 }
@@ -184,6 +195,7 @@ int8_t clamp_mouse(int8_t displacement, int8_t current_pos) {
 }
 
 static void set_slave(uint8_t slave_idx) {
+    ESP_LOGI(TAG, "Switching to slave %d", slave_idx);
     Message msg;
     for( int i = 0; i < NUM_SLAVES; i++ ) {
         msg.type = MESSAGE_TYPE_KB;
@@ -195,21 +207,9 @@ static void set_slave(uint8_t slave_idx) {
         memcpy(msg.data, &empty_mouse_report, sizeof(hid_mouse_input_report_boot_extended_t));
         msg.len = sizeof(hid_mouse_input_report_boot_extended_t);
         xQueueSendToBack(send_queue, &msg, 0);
-        msg.type = MESSAGE_TYPE_LED;
-        msg.len = sizeof(LedMessage);
-        if ( i == slave_idx ) {
-            ((LedMessage*)msg.data)->green = 12;
-            ((LedMessage*)msg.data)->red = 0;
-            ((LedMessage*)msg.data)->blue = 0;
-        }
-        else {
-            ((LedMessage*)msg.data)->green = 0;
-            ((LedMessage*)msg.data)->red = 0;
-            ((LedMessage*)msg.data)->blue = 12;
-        }
-        xQueueSendToBack(send_queue, &msg, 0);
     }
     active_slave = slave_idx;
+    update_leds();
 }
 
 void mouse_listener_task() {
@@ -221,6 +221,7 @@ void mouse_listener_task() {
     int8_t y;
     while(1) {
         if ( xQueueReceive( hid_queues.mouse_queue, &report, portMAX_DELAY ) == pdTRUE) {
+            ctrl_taps = 0;
             for( int i = 0; i < NUM_SLAVES; i++ ) {
                 msg.len = sizeof(hid_mouse_input_report_boot_extended_t);
                 msg.slave = i;
@@ -243,6 +244,25 @@ void mouse_listener_task() {
     }
 }
 
+void next_slave() {
+    ESP_LOGD(TAG, "Next slave");
+    int next_slave = active_slave;
+    for (int i = 0; i < NUM_SLAVES; i++ ) {
+        next_slave++;
+        if ( next_slave >= NUM_SLAVES ) {
+            next_slave = 0;
+        }
+        
+        if (states[next_slave].led_state.tud_mounted) {
+            set_slave(next_slave);
+            return;
+        }
+        else {
+            ESP_LOGD(TAG, "Slave %d is not connected", next_slave);
+        }
+    }
+}
+
 void kb_listener_task() {
     hid_keyboard_input_report_boot_t report;
     esp_err_t err;
@@ -250,10 +270,8 @@ void kb_listener_task() {
     Message msg;
     while(1) {
         if ( xQueueReceive( hid_queues.kb_queue, &report, portMAX_DELAY ) == pdTRUE) {
-            if ( report.modifier.val == meta_modifiers ) {
-                if ( report.key[0] >= 0x1e && report.key[0] <= 0x27 ) { // number keys 1-0
-                    set_slave( report.key[0] - 0x1e );
-                }
+            if ( report.modifier.val == meta_modifiers && report.key[0] >= 0x1e && report.key[0] <= 0x27 && report.key[1] == 0 ) {
+                set_slave( report.key[0] - 0x1e );
             }
             else {
                 msg.len = sizeof(hid_keyboard_input_report_boot_t);
@@ -261,6 +279,28 @@ void kb_listener_task() {
                 msg.type = MESSAGE_TYPE_KB;
                 memcpy(msg.data, &report, sizeof(hid_keyboard_input_report_boot_t));
                 xQueueSendToBack(send_queue, &msg, 0);
+            }
+            if ( report.key[0] == 0 ) {
+                if ( ctrl_taps > 0 && report.modifier.val == 0 ) {
+                    ctrl_taps++;
+                    ESP_LOGD(TAG, "Ctrl_taps++ 1 (%d)", ctrl_taps);
+                }
+                else if ( report.modifier.val == left_ctrl_only_modifier ) {
+                    ctrl_taps++;       
+                    ESP_LOGD(TAG, "Ctrl_taps++ 2 (%d)", ctrl_taps);
+                }
+                else {
+                    ctrl_taps = 0;
+                    ESP_LOGD(TAG, "Ctrl_taps=0 1");
+                }
+                if ( ctrl_taps == 4 ) {
+                    ctrl_taps = 0;
+                    next_slave();
+                }
+            }
+            else {
+                ctrl_taps = 0;
+                ESP_LOGD(TAG, "Ctrl_taps=0 2");
             }
         }
     }
