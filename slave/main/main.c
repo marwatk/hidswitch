@@ -14,6 +14,7 @@
 #include "driver/i2c.h"
 #include "led_strip.h"
 #include "messages.h"
+#include <esp32/rom/crc.h>
 
 #define LED_GPIO 48
 #define ESP_SLAVE_BASE_ADDR 0x28             /*!< ESP32 slave address, you can set any 7bit value */
@@ -26,6 +27,7 @@ static char *TAG = "SLV0";
 static int i2c_slave_port = 0;
 static uint16_t device_address;
 uint8_t *receive_buffer;
+uint8_t *send_buffer;
 
 /************* TinyUSB descriptors ****************/
 
@@ -47,59 +49,6 @@ const uint8_t hid_report_descriptor[] = {
 #define I2C_SLAVE_NUM 0 /*!< I2C port number for slave dev */
 #define I2C_SLAVE_TX_BUF_LEN (2 * DATA_LENGTH)              /*!< I2C slave tx buffer size */
 #define I2C_SLAVE_RX_BUF_LEN (2 * DATA_LENGTH)              /*!< I2C slave rx buffer size */
-
-typedef struct {
-    union {
-        struct {
-            uint8_t button1:    1;
-            uint8_t button2:    1;
-            uint8_t button3:    1;
-            uint8_t button4:    1;
-            uint8_t button5:    1;
-            uint8_t button6:    1;
-            uint8_t button7:    1;
-            uint8_t button8:    1;
-        };
-        uint8_t val;
-    } buttons;
-    int8_t x_displacement;
-    int8_t y_displacement;
-    int8_t scroll_displacement;
-} __attribute__((packed)) hid_mouse_input_report_boot_extended_t;
-
-typedef struct {
-    union {
-        struct {
-            uint8_t left_ctr:    1;
-            uint8_t left_shift:  1;
-            uint8_t left_alt:    1;
-            uint8_t left_gui:    1;
-            uint8_t rigth_ctr:   1;
-            uint8_t right_shift: 1;
-            uint8_t right_alt:   1;
-            uint8_t right_gui:   1;
-        };
-        uint8_t val;
-    } modifier;
-    uint8_t reserved;
-    uint8_t key[6];
-} __attribute__((packed)) hid_keyboard_input_report_boot_t;
-
-typedef struct {
-    union {
-        struct {
-            uint8_t num_lock:    1;
-            uint8_t caps_lock:   1;
-            uint8_t scroll_lock: 1;
-            uint8_t compose:     1;
-            uint8_t kana:        1;
-            uint8_t reserved1:    1;
-            uint8_t reserved2:    1;
-            uint8_t tud_mounted: 1;
-        };
-        uint8_t val;
-    } led_state;
-} __attribute__((packed)) hid_keyboard_output_report_boot_t;
 
 hid_keyboard_output_report_boot_t led_state = { 0 };
 
@@ -155,6 +104,13 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
 }
 
 void send_led_state() {
+    /*
+    uint8_t check_byte = crc8_le(0, &led_state, sizeof(hid_keyboard_output_report_boot_t));
+    memcpy(send_buffer, &led_state, sizeof(hid_keyboard_output_report_boot_t));
+    send_buffer[sizeof(hid_keyboard_output_report_boot_t)] = check_byte;
+    */
+    led_state.checksum = crc8_le(0, &led_state.led_state.val, sizeof(uint8_t));
+    ESP_LOGI(TAG, "LS: %02x %2x", led_state.led_state.val, led_state.checksum);
     i2c_slave_write_buffer(i2c_slave_port, &led_state, sizeof(hid_keyboard_output_report_boot_t), 0);
 }
 
@@ -274,6 +230,7 @@ void device_app_main(void)
 
     receive_buffer = (uint8_t*)malloc(I2C_SLAVE_RX_BUF_LEN);
     memset(receive_buffer, 0, I2C_SLAVE_RX_BUF_LEN);
+    send_buffer = (uint8_t*)malloc(sizeof(hid_keyboard_output_report_boot_t)+1);
 
     i2c_config_t conf_slave = {
         .sda_io_num = I2C_SLAVE_SDA_IO,          // select GPIO specific to your project
@@ -298,7 +255,10 @@ void device_app_main(void)
     int read;
     uint8_t message_type;
     uint8_t message_length;
+    uint8_t check_byte;
+    int i = 0;
     while(1) {
+        i++;
         read = i2c_slave_read_buffer(i2c_slave_port, receive_buffer, 2, 10000 / portTICK_PERIOD_MS);
         if ( read == 0 ) {
             continue;
@@ -306,21 +266,37 @@ void device_app_main(void)
         message_type = receive_buffer[0];
         message_length = receive_buffer[1];
         if (message_length > 0) {
-            read = i2c_slave_read_buffer(i2c_slave_port, receive_buffer, message_length, 50 / portTICK_PERIOD_MS);
+            read = i2c_slave_read_buffer(i2c_slave_port, receive_buffer+2, message_length, 10 / portTICK_PERIOD_MS);
+            if ( read < message_length ) {
+                ESP_LOGE(TAG, "Short read (%d < %d)", read, message_length);
+                // Flush the input
+                while ( i2c_slave_read_buffer(i2c_slave_port, &check_byte, 1, 0) ) { };
+            }
+            i2c_slave_read_buffer(i2c_slave_port, &check_byte, 1, 10 / portTICK_PERIOD_MS);
+            if ( check_byte != crc8_le(0, receive_buffer, message_length+2) ) {
+                ESP_LOGE(TAG, "CRC Error");
+                // Flush the input
+                while ( i2c_slave_read_buffer(i2c_slave_port, &check_byte, 1, 0) ) { };
+            }
             if(!tud_mounted() && led_state.led_state.tud_mounted) {
                 ESP_LOGI(TAG, "unmounted");
                 led_state.led_state.tud_mounted = 0;
+                send_led_state();
             }
             else if (tud_mounted() && !led_state.led_state.tud_mounted) {
                 ESP_LOGI(TAG, "mounted");
                 led_state.led_state.tud_mounted = 1;
+                send_led_state();
             }
-            send_led_state();
         }
-        dispatch(message_type, receive_buffer, message_length);
+        dispatch(message_type, receive_buffer+2, message_length);
         // ESP_LOGI(TAG, "Received %d, %d", message_type, message_length);
         memset(receive_buffer, 0, read);
+        if ( i % 100 == 0 ) {
+            send_led_state(); // Periodically refresh state
+        }
     }
+
 }
 
 

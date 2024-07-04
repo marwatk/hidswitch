@@ -18,10 +18,10 @@
 #include "errno.h"
 #include "driver/gpio.h"
 
-#include "usb/hid_usage_keyboard.h"
 #include "usb/hid_usage_mouse.h"
 #include "usb/hid_host.h"
 #include "main.h"
+#include "messages.h"
 
 /* GPIO Pin number for quit from example logic */
 #define APP_QUIT_PIN                GPIO_NUM_0

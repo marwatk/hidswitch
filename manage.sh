@@ -12,6 +12,7 @@ function copy_source {
   local src="$1"
   local dest="$2"
   cp -rp "${src}/main" "${dest}/"
+  cp -rp shared/main "${dest}/"
   cp \
     "${src}/CMakeLists.txt" \
     "${src}/dependencies.lock" \
