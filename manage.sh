@@ -7,6 +7,7 @@ readonly ROOT_DIR
 
 readonly DEVICE_FILE="${ROOT_DIR}/devices.txt"
 readonly FLASH_HOST="${FLASH_HOST:-avrdude}"
+readonly ESP_VERSION=5.2.1
 
 function copy_source {
   local src="$1"
@@ -43,7 +44,7 @@ function run {
     -v "${build_folder}:/project" \
     --name "hidswitch_${device}" \
     -w /project \
-    espressif/idf:v5.2.1 \
+    espressif/idf:v${ESP_VERSION} \
       idf.py \
         --port "rfc2217://${FLASH_HOST}:${port}?ign_set_control" \
         -DIDF_TARGET=esp32s3 \

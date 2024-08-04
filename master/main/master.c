@@ -255,27 +255,32 @@ void next_slave() {
     }
 }
 
+// Switch to next device when ctrl+(2 x shift) pressed
 void switch_checker(uint8_t modifiers) {
+    if ( modifiers == 0 ) {
+        switch_taps = 0;
+        return;
+    }
     // More modifiers than left ctrl+shift pressed
     if ( (modifiers | left_ctrl_left_shift_modifier) != left_ctrl_left_shift_modifier) {
         switch_taps = 0;
         return;
     }
-    if ( modifiers == 0 ) {
-        if ( switch_taps % 2 == 1 ) {
-            // Nothing pressed but we've started the cycle, increment us
-            switch_taps++;
+    if ( modifiers == left_ctrl_only_modifier ) {
+        switch (switch_taps) {
+            case 0:
+            case 2:
+                switch_taps++;
+                break;
+            case 4:
+                switch_taps = 1;
+                next_slave();
+                break;
         }
-        if ( switch_taps >= 4 ) {
-            switch_taps = 0;
-            next_slave();
-        }
-        return;
     }
-    if ( (modifiers & left_ctrl_left_shift_modifier) == left_ctrl_left_shift_modifier ) {
-        if ( switch_taps % 2 == 0 ) {
-            switch_taps++;
-        }
+    if ( switch_taps != 0 && modifiers == left_ctrl_left_shift_modifier ) {
+        switch_taps++;
+        return;
     }
 }
 
