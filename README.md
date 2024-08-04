@@ -1,7 +1,12 @@
 # hidswitch
 
 Software to turn ESP32-S3 devices into a USB switch using the HID protocol.
-Note, currently only supports a single USB device (e.g. a Logitech Unifying Receiver).
+This doesn't operate like a typical USB switch,
+which essentially unplugs and re-plugs the devices when switching.
+Instead, it runs an HID keyboard and mouse for each host device,
+proxying the actual input from the connected USB device[s] to the selected host.
+
+Note, it currently only supports a single USB device (e.g. a Logitech Unifying Receiver).
 Hubs are work-in-progress.
 
 _CAVEAT_: I'm not a C programmer, this code is probably terrible.
@@ -182,7 +187,7 @@ where `[number]` is 1-9 and represents `SLV0`-`SLV8`.
 #### Next device
 
 To switch to the next connected host device, press and hold <kbd>L Ctrl</kbd> and press <kbd>L Shift</kbd> twice.
-This will skip any boards to don't detect a host device.
+This will skip any boards that don't detect a host device.
 
 ### Shared input
 
