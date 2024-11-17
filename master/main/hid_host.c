@@ -230,6 +230,11 @@ void hid_host_device_event(hid_host_device_handle_t hid_device_handle,
     case HID_HOST_DRIVER_EVENT_CONNECTED:
         ESP_LOGI(TAG, "HID Device, protocol '%s' CONNECTED",
                  hid_proto_name_str[dev_params.proto]);
+        if (dev_params.proto != HID_PROTOCOL_KEYBOARD
+                && dev_params.proto != HID_PROTOCOL_MOUSE) {
+            ESP_LOGI(TAG, "Ignoring non kb/mouse device");
+            return;
+        }
 
         const hid_host_device_config_t dev_config = {
             .callback = hid_host_interface_callback,
