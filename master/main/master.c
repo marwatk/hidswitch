@@ -150,20 +150,19 @@ static void master_sender_task(QueueHandle_t send_queue) {
             buf[1] = msg.len;
             memcpy(&buf[2], msg.data, msg.len);
             buf[2+msg.len] = crc8_le(0, buf, msg.len+2);
-            err = i2c_master_write_slave(I2C_MASTER_NUM, msg.slave, buf, msg.len + 3);
+            hid_keyboard_output_report_boot_t new_state = { 0 };
+            err = i2c_master_transmit_receive(
+                slave_handles[msg.slave],
+                buf,
+                msg.len+3,
+                (void*)&new_state,
+                sizeof(hid_keyboard_output_report_boot_t),
+                10);
             if ( err != ESP_OK) {
                 ESP_LOGI(TAG, "Err i2c send to %d: %d", msg.slave, err);
             }
             else {
                 ESP_LOGD(TAG, "i2c send to %d: %d (%d) [0]: %x", msg.slave, msg.type, msg.len, ((uint8_t*)msg.data)[0]);
-            }
-            
-            hid_keyboard_output_report_boot_t new_state = { 0 };
-            err = i2c_master_read_slave(I2C_MASTER_NUM, msg.slave, (void*)&new_state, sizeof(hid_keyboard_output_report_boot_t));
-            if ( err != ESP_OK) {
-                ESP_LOGI(TAG, "Err i2c read from to %d: %d", msg.slave, err);
-            }
-            else {
                 uint8_t crc = crc8_le(0, &new_state.led_state.val, sizeof(uint8_t));
                 if ( crc != new_state.checksum ) {
                     ESP_LOGI(TAG, "SLV%d: bad checksum (%x, %x, %x)", msg.slave, new_state.led_state.val, new_state.checksum, crc);
