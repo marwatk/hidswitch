@@ -330,9 +330,9 @@ void master_main(QueueHandle_t send_q) {
     ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_NUM, &conf));
     ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, ESP_INTR_FLAG_SHARED));
 
-    xTaskCreate(master_sender_task, "master_sender", 1024 * 2, (QueueHandle_t)send_queue, 10, NULL);
-    xTaskCreate(hid_host_main_task, "hid_host_main", 1024 * 2, (void *)&hid_queues, 10, NULL);
-    xTaskCreate(kb_listener_task, "kb_listener", 1024 * 2, (void *)&hid_queues, 10, NULL);
-    xTaskCreate(mouse_listener_task, "mouse_listener", 1024 * 2, (void *)&hid_queues, 10, NULL);
+    xTaskCreate(master_sender_task, "master_sender", 3*configMINIMAL_STACK_SIZE, (QueueHandle_t)send_queue, 10, NULL);
+    xTaskCreate(hid_host_main_task, "hid_host_main", 3*configMINIMAL_STACK_SIZE, (void *)&hid_queues, 10, NULL);
+    xTaskCreate(kb_listener_task, "kb_listener", 3*configMINIMAL_STACK_SIZE, (void *)&hid_queues, 10, NULL);
+    xTaskCreate(mouse_listener_task, "mouse_listener", 3*configMINIMAL_STACK_SIZE, (void *)&hid_queues, 10, NULL);
     set_slave( 0 );
 }

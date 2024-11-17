@@ -326,7 +326,7 @@ void hid_host_main_task(void *arg)
     */
     task_created = xTaskCreatePinnedToCore(usb_lib_task,
                                            "usb_events",
-                                           4096,
+                                           3*configMINIMAL_STACK_SIZE,
                                            xTaskGetCurrentTaskHandle(),
                                            2, NULL, 0);
     assert(task_created == pdTRUE);

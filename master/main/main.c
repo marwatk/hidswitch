@@ -102,6 +102,6 @@ void app_main(void) {
     send_queue = xQueueCreate( 10, sizeof( Message ) );
     led_queue = xQueueCreate(10, sizeof(LedMessage));
 
-    xTaskCreate(led_task, "led_task", 1024 * 2, (void *)0, 10, NULL);
+    xTaskCreate(led_task, "led_task", 3*configMINIMAL_STACK_SIZE, (void *)0, 10, NULL);
     master_main(send_queue);
 }
