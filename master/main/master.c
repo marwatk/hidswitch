@@ -53,51 +53,6 @@ hid_keyboard_output_report_boot_t states[NUM_SLAVES] = { 0 };
 i2c_device_config_t slave_cfgs[NUM_SLAVES] = { 0 };
 i2c_master_dev_handle_t slave_handles[NUM_SLAVES] = { 0 };
 
-// Adapted from: https://github.com/espressif/esp-idf/blob/cbce221e88d52665523093b2b6dd0ebe3f1243f1/examples/peripherals/i2c/i2c_self_test/main/i2c_example_main.c#L101
-static esp_err_t __attribute__((unused)) i2c_master_write_slave(i2c_port_t i2c_num, int slave_idx, uint8_t *data_wr, size_t size)
-{
-    esp_err_t ret;
-    ret = i2c_master_transmit(slave_handles[slave_idx], data_wr, size, 10);
-    return ret;
-
-    /*
-
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (slave_addr << 1) | WRITE_BIT, ACK_CHECK_EN);
-    i2c_master_write(cmd, data_wr, size, ACK_CHECK_EN);
-    i2c_master_write_byte(cmd, crc, ACK_CHECK_EN);
-    i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(i2c_num, cmd, 10 / portTICK_PERIOD_MS);
-    i2c_cmd_link_delete(cmd);
-    */
-    return ret;
-}
-
-// From: https://github.com/espressif/esp-idf/blob/cbce221e88d52665523093b2b6dd0ebe3f1243f1/examples/peripherals/i2c/i2c_self_test/main/i2c_example_main.c#L71
-static esp_err_t __attribute__((unused)) i2c_master_read_slave(i2c_port_t i2c_num, int slave_idx, uint8_t *data_rd, size_t size)
-{
-    if (size == 0) {
-        return ESP_OK;
-    }
-    esp_err_t ret;
-    ret = i2c_master_receive(slave_handles[slave_idx], data_rd, size, 10);
-    return ret;
-    /*
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (slave_addr << 1) | READ_BIT, ACK_CHECK_EN);
-    if (size > 1) {
-        i2c_master_read(cmd, data_rd, size - 1, ACK_VAL);
-    }
-    i2c_master_read_byte(cmd, data_rd + size - 1, NACK_VAL);
-    i2c_master_stop(cmd);
-    ret = i2c_master_cmd_begin(i2c_num, cmd, 0);
-    i2c_cmd_link_delete(cmd);
-    */
-    return ret;
-}
-
 static void update_leds() {
     Message msg;
     for( int i = 0; i < NUM_SLAVES; i++ ) {
@@ -131,7 +86,7 @@ static void master_sender_task(QueueHandle_t send_queue) {
         if ( xQueueReceive( send_queue, &msg, portMAX_DELAY ) == pdTRUE) {
             if (msg.type == MESSAGE_TYPE_MOUSE) {
                 hid_mouse_input_report_boot_extended_t *mouse_report = (hid_mouse_input_report_boot_extended_t*)msg.data;
-                ESP_LOGI(TAG, "Mous%d: %d,%d, wheel: %d buttons: %d %d %d %d %d %d %d %d",
+                ESP_LOGD(TAG, "Mous%d: %d,%d, wheel: %d buttons: %d %d %d %d %d %d %d %d",
                     msg.slave,
                     mouse_report->x_displacement,
                     mouse_report->y_displacement,
@@ -165,7 +120,7 @@ static void master_sender_task(QueueHandle_t send_queue) {
                 ESP_LOGD(TAG, "i2c send to %d: %d (%d) [0]: %x", msg.slave, msg.type, msg.len, ((uint8_t*)msg.data)[0]);
                 uint8_t crc = crc8_le(0, &new_state.led_state.val, sizeof(uint8_t));
                 if ( crc != new_state.checksum ) {
-                    ESP_LOGI(TAG, "SLV%d: bad checksum (%x, %x, %x)", msg.slave, new_state.led_state.val, new_state.checksum, crc);
+                    ESP_LOGD(TAG, "SLV%d: bad checksum (%x, %x, %x)", msg.slave, new_state.led_state.val, new_state.checksum, crc);
                 }
                 else {
                     ESP_LOGI(TAG, "LS%d: %x", msg.slave, new_state.led_state.val);

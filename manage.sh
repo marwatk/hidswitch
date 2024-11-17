@@ -7,7 +7,8 @@ readonly ROOT_DIR
 
 readonly DEVICE_FILE="${ROOT_DIR}/devices.txt"
 readonly FLASH_HOST="${FLASH_HOST:-avrdude}"
-readonly ESP_VERSION=5.4-beta1
+readonly SLV_ESP_VERSION=5.2.1
+readonly MSTR_ESP_VERSION=5.4-beta1
 
 function copy_source {
   local src="$1"
@@ -92,7 +93,11 @@ function start_serial {
 function main {
   local device="$1"
   local steps=("${@:2}")
-
+  if [[ "${device}" == "MSTR" ]]; then
+    readonly ESP_VERSION="${MSTR_ESP_VERSION}"
+  else
+    readonly ESP_VERSION="${SLV_ESP_VERSION}"
+  fi
   if [[ "${steps[0]}" == "serial" ]]; then
     start_serial "${device}"
   else
