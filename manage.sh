@@ -7,7 +7,7 @@ readonly ROOT_DIR
 
 readonly DEVICE_FILE="${ROOT_DIR}/devices.txt"
 readonly FLASH_HOST="${FLASH_HOST:-avrdude}"
-readonly ESP_VERSION=5.2.1
+readonly ESP_VERSION=5.4-beta1
 
 function copy_source {
   local src="$1"

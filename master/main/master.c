@@ -122,7 +122,7 @@ static void master_sender_task(QueueHandle_t send_queue) {
             uint16_t slave_addr = ESP_SLAVE_BASE_ADDR + msg.slave;
             
             if (msg.type == MESSAGE_TYPE_MOUSE) {
-                hid_mouse_input_report_boot_extended_t *mouse_report = msg.data;
+                hid_mouse_input_report_boot_extended_t *mouse_report = (hid_mouse_input_report_boot_extended_t*)msg.data;
                 ESP_LOGD(TAG, "Mous%d: %d,%d, wheel: %d buttons: %d %d %d %d %d %d %d %d",
                     msg.slave,
                     mouse_report->x_displacement,
@@ -150,7 +150,7 @@ static void master_sender_task(QueueHandle_t send_queue) {
             }
             
             hid_keyboard_output_report_boot_t new_state = { 0 };
-            err = i2c_master_read_slave(I2C_MASTER_NUM, slave_addr, &new_state, sizeof(hid_keyboard_output_report_boot_t));
+            err = i2c_master_read_slave(I2C_MASTER_NUM, slave_addr, (void*)&new_state, sizeof(hid_keyboard_output_report_boot_t));
             if ( err != ESP_OK) {
                 ESP_LOGD(TAG, "Err i2c read from to %d: %d", msg.slave, err);
             }
@@ -330,9 +330,9 @@ void master_main(QueueHandle_t send_q) {
     ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_NUM, &conf));
     ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, ESP_INTR_FLAG_SHARED));
 
-    xTaskCreate(master_sender_task, "master_sender", 3*configMINIMAL_STACK_SIZE, (QueueHandle_t)send_queue, 10, NULL);
-    xTaskCreate(hid_host_main_task, "hid_host_main", 3*configMINIMAL_STACK_SIZE, (void *)&hid_queues, 10, NULL);
-    xTaskCreate(kb_listener_task, "kb_listener", 3*configMINIMAL_STACK_SIZE, (void *)&hid_queues, 10, NULL);
-    xTaskCreate(mouse_listener_task, "mouse_listener", 3*configMINIMAL_STACK_SIZE, (void *)&hid_queues, 10, NULL);
+    xTaskCreate((void*)master_sender_task, "master_sender", 3*configMINIMAL_STACK_SIZE, (QueueHandle_t)send_queue, 10, NULL);
+    xTaskCreate((void*)hid_host_main_task, "hid_host_main", 3*configMINIMAL_STACK_SIZE, (void *)&hid_queues, 10, NULL);
+    xTaskCreate((void*)kb_listener_task, "kb_listener", 3*configMINIMAL_STACK_SIZE, (void *)&hid_queues, 10, NULL);
+    xTaskCreate((void*)mouse_listener_task, "mouse_listener", 3*configMINIMAL_STACK_SIZE, (void *)&hid_queues, 10, NULL);
     set_slave( 0 );
 }

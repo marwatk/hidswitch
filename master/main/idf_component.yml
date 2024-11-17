@@ -1,5 +1,6 @@
 dependencies:
   espressif/led_strip: "^2.4.1"
-  usb_host_hid: "^1.0.1"
+  usb_host_hid: "^1.0.3"
   espressif/esp_tinyusb: "^1.1"
-  idf: "^5.2.1"
+  # Need this line: https://github.com/espressif/esp-idf/blob/ce6085349f8d5a95fc857e28e2d73d73dd3629b5/components/usb/CMakeLists.txt#L32
+  #idf: "^5.4"
