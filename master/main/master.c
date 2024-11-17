@@ -1,13 +1,13 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
-#include "driver/i2c.h"
-#include "hid_host.h"
+#include "driver/i2c_master.h"
 #include "messages.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
+#include "hid_host.h"
 #include "main.h"
 #include <esp32/rom/crc.h>
 #include <time.h>
@@ -48,14 +48,19 @@ static hid_mouse_input_report_boot_extended_t empty_mouse_report = { 0 };
 static hid_keyboard_input_report_boot_t empty_kb_report = { 0 };
 
 static int switch_taps = 0;
-static clock_t switch_tap_time;
 
 hid_keyboard_output_report_boot_t states[NUM_SLAVES] = { 0 };
+i2c_device_config_t slave_cfgs[NUM_SLAVES] = { 0 };
+i2c_master_dev_handle_t slave_handles[NUM_SLAVES] = { 0 };
 
 // Adapted from: https://github.com/espressif/esp-idf/blob/cbce221e88d52665523093b2b6dd0ebe3f1243f1/examples/peripherals/i2c/i2c_self_test/main/i2c_example_main.c#L101
-static esp_err_t __attribute__((unused)) i2c_master_write_slave(i2c_port_t i2c_num, uint8_t slave_addr, uint8_t *data_wr, size_t size)
+static esp_err_t __attribute__((unused)) i2c_master_write_slave(i2c_port_t i2c_num, int slave_idx, uint8_t *data_wr, size_t size)
 {
-    uint8_t crc = crc8_le(0, data_wr, size);
+    esp_err_t ret;
+    ret = i2c_master_transmit(slave_handles[slave_idx], data_wr, size, 10);
+    return ret;
+
+    /*
 
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
@@ -63,17 +68,22 @@ static esp_err_t __attribute__((unused)) i2c_master_write_slave(i2c_port_t i2c_n
     i2c_master_write(cmd, data_wr, size, ACK_CHECK_EN);
     i2c_master_write_byte(cmd, crc, ACK_CHECK_EN);
     i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(i2c_num, cmd, 10 / portTICK_PERIOD_MS);
+    ret = i2c_master_cmd_begin(i2c_num, cmd, 10 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
+    */
     return ret;
 }
 
 // From: https://github.com/espressif/esp-idf/blob/cbce221e88d52665523093b2b6dd0ebe3f1243f1/examples/peripherals/i2c/i2c_self_test/main/i2c_example_main.c#L71
-static esp_err_t __attribute__((unused)) i2c_master_read_slave(i2c_port_t i2c_num, uint8_t slave_addr, uint8_t *data_rd, size_t size)
+static esp_err_t __attribute__((unused)) i2c_master_read_slave(i2c_port_t i2c_num, int slave_idx, uint8_t *data_rd, size_t size)
 {
     if (size == 0) {
         return ESP_OK;
     }
+    esp_err_t ret;
+    ret = i2c_master_receive(slave_handles[slave_idx], data_rd, size, 10);
+    return ret;
+    /*
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (slave_addr << 1) | READ_BIT, ACK_CHECK_EN);
@@ -82,8 +92,9 @@ static esp_err_t __attribute__((unused)) i2c_master_read_slave(i2c_port_t i2c_nu
     }
     i2c_master_read_byte(cmd, data_rd + size - 1, NACK_VAL);
     i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(i2c_num, cmd, 0);
+    ret = i2c_master_cmd_begin(i2c_num, cmd, 0);
     i2c_cmd_link_delete(cmd);
+    */
     return ret;
 }
 
@@ -118,12 +129,9 @@ static void master_sender_task(QueueHandle_t send_queue) {
     uint8_t *buf = malloc(512);
     while(1) {
         if ( xQueueReceive( send_queue, &msg, portMAX_DELAY ) == pdTRUE) {
-            esp_err_t ret;
-            uint16_t slave_addr = ESP_SLAVE_BASE_ADDR + msg.slave;
-            
             if (msg.type == MESSAGE_TYPE_MOUSE) {
                 hid_mouse_input_report_boot_extended_t *mouse_report = (hid_mouse_input_report_boot_extended_t*)msg.data;
-                ESP_LOGD(TAG, "Mous%d: %d,%d, wheel: %d buttons: %d %d %d %d %d %d %d %d",
+                ESP_LOGI(TAG, "Mous%d: %d,%d, wheel: %d buttons: %d %d %d %d %d %d %d %d",
                     msg.slave,
                     mouse_report->x_displacement,
                     mouse_report->y_displacement,
@@ -141,26 +149,27 @@ static void master_sender_task(QueueHandle_t send_queue) {
             buf[0] = msg.type;
             buf[1] = msg.len;
             memcpy(&buf[2], msg.data, msg.len);
-            err = i2c_master_write_slave(I2C_MASTER_NUM, slave_addr, buf, msg.len + 2);
+            buf[2+msg.len] = crc8_le(0, buf, msg.len+2);
+            err = i2c_master_write_slave(I2C_MASTER_NUM, msg.slave, buf, msg.len + 3);
             if ( err != ESP_OK) {
-                ESP_LOGD(TAG, "Err i2c send to %d: %d", msg.slave, err);
+                ESP_LOGI(TAG, "Err i2c send to %d: %d", msg.slave, err);
             }
             else {
                 ESP_LOGD(TAG, "i2c send to %d: %d (%d) [0]: %x", msg.slave, msg.type, msg.len, ((uint8_t*)msg.data)[0]);
             }
             
             hid_keyboard_output_report_boot_t new_state = { 0 };
-            err = i2c_master_read_slave(I2C_MASTER_NUM, slave_addr, (void*)&new_state, sizeof(hid_keyboard_output_report_boot_t));
+            err = i2c_master_read_slave(I2C_MASTER_NUM, msg.slave, (void*)&new_state, sizeof(hid_keyboard_output_report_boot_t));
             if ( err != ESP_OK) {
-                ESP_LOGD(TAG, "Err i2c read from to %d: %d", msg.slave, err);
+                ESP_LOGI(TAG, "Err i2c read from to %d: %d", msg.slave, err);
             }
             else {
                 uint8_t crc = crc8_le(0, &new_state.led_state.val, sizeof(uint8_t));
                 if ( crc != new_state.checksum ) {
-                    ESP_LOGD(TAG, "SLV%d: bad checksum (%x, %x, %x)", msg.slave, new_state.led_state.val, new_state.checksum, crc);
+                    ESP_LOGI(TAG, "SLV%d: bad checksum (%x, %x, %x)", msg.slave, new_state.led_state.val, new_state.checksum, crc);
                 }
                 else {
-                    ESP_LOGD(TAG, "LS%d: %x", msg.slave, new_state.led_state.val);
+                    ESP_LOGI(TAG, "LS%d: %x", msg.slave, new_state.led_state.val);
                     if (new_state.led_state.val != states[msg.slave].led_state.val) {
                         states[msg.slave].led_state.val = new_state.led_state.val;
                         update_leds();
@@ -202,8 +211,6 @@ static void set_slave(uint8_t slave_idx) {
 
 void mouse_listener_task() {
     hid_mouse_input_report_boot_extended_t report;
-    esp_err_t err;
-    hid_mouse_input_report_boot_extended_t *to_send;
     Message msg;
     int8_t x;
     int8_t y;
@@ -237,7 +244,7 @@ void mouse_listener_task() {
 }
 
 void next_slave() {
-    ESP_LOGD(TAG, "Next slave");
+    ESP_LOGI(TAG, "Next slave");
     int next_slave = active_slave;
     for (int i = 0; i < NUM_SLAVES; i++ ) {
         next_slave++;
@@ -250,7 +257,7 @@ void next_slave() {
             return;
         }
         else {
-            ESP_LOGD(TAG, "Slave %d is not connected", next_slave);
+            ESP_LOGI(TAG, "Slave %d is not connected", next_slave);
         }
     }
 }
@@ -286,8 +293,6 @@ void switch_checker(uint8_t modifiers) {
 
 void kb_listener_task() {
     hid_keyboard_input_report_boot_t report;
-    esp_err_t err;
-    hid_keyboard_input_report_boot_t *to_send;
     Message msg;
     while(1) {
         if ( xQueueReceive( hid_queues.kb_queue, &report, portMAX_DELAY ) == pdTRUE) {
@@ -313,22 +318,34 @@ void kb_listener_task() {
 
 void master_main(QueueHandle_t send_q) {
     ESP_LOGI(TAG, "Running as master");
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = I2C_MASTER_SDA_IO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_io_num = I2C_MASTER_SCL_IO,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = I2C_MASTER_FREQ_HZ,
-        // .clk_flags = 0,          /*!< Optional, you can use I2C_SCLK_SRC_FLAG_* flags to choose i2c source clock here. */
+    i2c_master_bus_config_t conf = {
+        .clk_source                     = I2C_CLK_SRC_DEFAULT,
+        .i2c_port                       = I2C_MASTER_NUM,
+        .scl_io_num                     = I2C_MASTER_SCL_IO,
+        .sda_io_num                     = I2C_MASTER_SDA_IO,
+        .glitch_ignore_cnt              = 7,                   
+        .flags.enable_internal_pullup   = GPIO_PULLUP_ENABLE,
     };
 
     send_queue = send_q;
     hid_queues.mouse_queue = xQueueCreate( 10, sizeof(hid_mouse_input_report_boot_extended_t) );
     hid_queues.kb_queue = xQueueCreate( 10, sizeof(hid_keyboard_input_report_boot_t) );
 
-    ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_NUM, &conf));
-    ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, ESP_INTR_FLAG_SHARED));
+    i2c_master_bus_handle_t i2c_bus;
+    i2c_new_master_bus(&conf, &i2c_bus);
+    if (i2c_bus == NULL) {
+        ESP_LOGE(TAG, "i2c bus creation failed");
+    }
+    else {
+        ESP_LOGI(TAG, "i2c bus creation succeeded");
+    }
+
+    for(int i = 0; i < NUM_SLAVES; i++) {
+        slave_cfgs[i].dev_addr_length = I2C_ADDR_BIT_LEN_7;
+        slave_cfgs[i].device_address = ESP_SLAVE_BASE_ADDR + i;
+        slave_cfgs[i].scl_speed_hz = I2C_MASTER_FREQ_HZ;
+        ESP_ERROR_CHECK(i2c_master_bus_add_device(i2c_bus, &slave_cfgs[i], &slave_handles[i]));
+    }
 
     xTaskCreate((void*)master_sender_task, "master_sender", 3*configMINIMAL_STACK_SIZE, (QueueHandle_t)send_queue, 10, NULL);
     xTaskCreate((void*)hid_host_main_task, "hid_host_main", 3*configMINIMAL_STACK_SIZE, (void *)&hid_queues, 10, NULL);
