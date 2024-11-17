@@ -226,3 +226,4 @@ abort() was called at PC 0x4037b4ef on core 0
 I was experimenting with the unreleased 5.4-beta1 to get these results.
 I may try again when it's fully released and attempt to update hid-host to support multiple of the same device class.
 Work was done in the `hub-support` branch.
+Potentially related [upstream bug](https://github.com/espressif/esp-idf/issues/14818).
