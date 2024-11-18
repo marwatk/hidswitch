@@ -6,8 +6,6 @@ which essentially unplugs and re-plugs the devices when switching.
 Instead, it runs an HID keyboard and mouse for each host device,
 proxying the actual input from the connected USB device[s] to the selected host.
 
-Note, it currently only supports a single USB device (e.g. a Logitech Unifying Receiver). See [Hub Support](#hub-support).
-
 _CAVEAT_: I'm not a C programmer, this code is probably terrible.
 
 ## Required Hardware
@@ -196,34 +194,8 @@ This keeps all devices active while you're actively using one of them.
 
 ## Hub Support
 
-The code currently only supports a single device (no hubs).
-USB Hub support was [added to the upstream](https://github.com/espressif/esp-idf/blob/ce6085349f8d5a95fc857e28e2d73d73dd3629b5/components/usb/CMakeLists.txt#L32) transparently,
-but the new version doesn't like the old I2C library I'm using so I haven't updated.
-Additionally, the hid-host library only supports a single keyboard and mouse.
-Attempting to add a second keyboard or mouse (necessary when using a combo device as one) results in:
-
-```text
-I (1370) hid_host: HID Device, protocol 'KEYBOARD' CONNECTED
-I (1370) hid_host: HID Device, protocol 'MOUSE' CONNECTED
-I (1370) hid_host: HID Device, protocol 'NONE' CONNECTED
-I (8450) hid_host: HID Device, protocol 'KEYBOARD' CONNECTED
-I (8450) hid_host: HID Device, protocol 'MOUSE' CONNECTED
-E (8450) USBH: EP Alloc error: ESP_ERR_NOT_SUPPORTED
-E (8460) USB HOST: EP allocation error ESP_ERR_NOT_SUPPORTED
-E (8460) USB HOST: Claiming interface error: ESP_ERR_NOT_SUPPORTED
-E (8470) hid-host: hid_host_interface_claim_and_prepare_transfer(576): Unable to claim Interface
-E (8480) hid-host: hid_host_device_open(1186): Unable to claim interface
-ESP_ERROR_CHECK failed: esp_err_t 0x106 (ESP_ERR_NOT_SUPPORTED) at 0x4200ad36
---- 0x4200ad36: hid_host_device_event at /project/main/hid_host.c:239 (discriminator 1)
-
-file: "./main/hid_host.c" line 239
-func: hid_host_device_event
-expression: hid_host_device_open(hid_device_handle, &dev_config)
-
-abort() was called at PC 0x4037b4ef on core 0
-```
-
-I was experimenting with the unreleased 5.4-beta1 to get these results.
-I may try again when it's fully released and attempt to update hid-host to support multiple of the same device class.
-Work was done in the `hub-support` branch.
-Potentially related [upstream bug](https://github.com/espressif/esp-idf/issues/14818).
+Hub support is inherited from
+[upstream](https://github.com/espressif/esp-idf/blob/ce6085349f8d5a95fc857e28e2d73d73dd3629b5/components/usb/CMakeLists.txt#L32).
+Worth nothing that the ESP32S3 is
+[limited to 8 USB channels](https://github.com/espressif/esp-idf/issues/14818#issuecomment-2453460404).
+Some HID devices implement both KB and mouse, and hub devices also count.

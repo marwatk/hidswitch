@@ -38,6 +38,7 @@ static QueueHandle_t send_queue;
 static uint8_t meta_modifiers = 0x11; // Left ctrl + Right ctrl
 static uint8_t left_ctrl_only_modifier = 0x1; 
 static uint8_t left_ctrl_left_shift_modifier = 0x3;
+static uint8_t mouse_button_switch_slaves = 0x20;
 
 #define INACTIVE_MOUSE_BOUNDING_BOX 20
 
@@ -48,6 +49,7 @@ static hid_mouse_input_report_boot_extended_t empty_mouse_report = { 0 };
 static hid_keyboard_input_report_boot_t empty_kb_report = { 0 };
 
 static int switch_taps = 0;
+static int switch_mouse = 0;
 
 hid_keyboard_output_report_boot_t states[NUM_SLAVES] = { 0 };
 i2c_device_config_t slave_cfgs[NUM_SLAVES] = { 0 };
@@ -163,6 +165,36 @@ static void set_slave(uint8_t slave_idx) {
     update_leds();
 }
 
+void next_slave() {
+    ESP_LOGI(TAG, "Next slave");
+    int next_slave = active_slave;
+    for (int i = 0; i < NUM_SLAVES; i++ ) {
+        next_slave++;
+        if ( next_slave >= NUM_SLAVES ) {
+            next_slave = 0;
+        }
+        
+        if (states[next_slave].led_state.tud_mounted) {
+            set_slave(next_slave);
+            return;
+        }
+        else {
+            ESP_LOGI(TAG, "Slave %d is not connected", next_slave);
+        }
+    }
+}
+
+void switch_checker_mouse(uint8_t buttons) {
+    if (buttons != mouse_button_switch_slaves) {
+        switch_mouse = 0;
+        return;
+    }
+    if (buttons == mouse_button_switch_slaves && switch_mouse == 0) {
+        switch_mouse = 1;
+        next_slave();
+    }
+}
+
 void mouse_listener_task() {
     hid_mouse_input_report_boot_extended_t report;
     Message msg;
@@ -171,6 +203,7 @@ void mouse_listener_task() {
     while(1) {
         if ( xQueueReceive( hid_queues.mouse_queue, &report, portMAX_DELAY ) == pdTRUE) {
             switch_taps = 0;
+            switch_checker_mouse(report.buttons.val);
             for( int i = 0; i < NUM_SLAVES; i++ ) {
                 msg.len = sizeof(hid_mouse_input_report_boot_extended_t);
                 msg.slave = i;
@@ -193,25 +226,7 @@ void mouse_listener_task() {
                 }
                 xQueueSendToBack(send_queue, &msg, 0);
             }
-        }
-    }
-}
-
-void next_slave() {
-    ESP_LOGI(TAG, "Next slave");
-    int next_slave = active_slave;
-    for (int i = 0; i < NUM_SLAVES; i++ ) {
-        next_slave++;
-        if ( next_slave >= NUM_SLAVES ) {
-            next_slave = 0;
-        }
-        
-        if (states[next_slave].led_state.tud_mounted) {
-            set_slave(next_slave);
-            return;
-        }
-        else {
-            ESP_LOGI(TAG, "Slave %d is not connected", next_slave);
+            
         }
     }
 }

@@ -107,6 +107,16 @@ static void hid_host_keyboard_report_callback(const uint8_t *const data, const i
 
 }
 
+static int8_t clamp(int16_t in) {
+    if (in < -128) {
+        return -128;
+    }
+    if (in > 127) {
+        return 127;
+    }
+    return (int8_t)in;
+}
+
 /**
  * @brief USB HID Host Mouse Interface report callback handler
  *
@@ -115,25 +125,46 @@ static void hid_host_keyboard_report_callback(const uint8_t *const data, const i
  */
 static void hid_host_mouse_report_callback(const uint8_t *const data, const int length)
 {
+    hid_mouse_input_report_boot_extended_t mouse_report = {0};
+    hid_mouse_input_report_boot_reverse_engineered_t long_report = {0};
 
-    if (length < sizeof(hid_mouse_input_report_boot_t)) {
-        return;
+    switch (length) {
+        case sizeof(hid_mouse_input_report_boot_t):
+            mouse_report.scroll_displacement = 0;
+            // Fall through
+        case sizeof(hid_mouse_input_report_boot_extended_t):
+            memcpy(&mouse_report, data, length);
+            break;
+        case sizeof(hid_mouse_input_report_boot_reverse_engineered_t):
+            memcpy(&long_report, data, length);
+            mouse_report.buttons.val = long_report.buttons.val;
+            mouse_report.scroll_displacement = long_report.wheel;
+            mouse_report.x_displacement = clamp(long_report.x);
+            mouse_report.y_displacement = clamp(long_report.y);
+            // Don't yet support horizontal scroll
+            break;
+        default:
+            ESP_LOGI(TAG, "Mouse report with invalid length: (%d)", length);
+            if (length == 8) {
+                ESP_LOGI(TAG, "Report: %d %d %d %d %d %d %d %d",
+                data[0],
+                data[1],
+                data[2],
+                data[3],
+                data[4],
+                data[5],
+                data[6],
+                data[7]);
+            }
+            return;
     }
 
-    hid_mouse_input_report_boot_extended_t mouse_report;
-
-    if (length > sizeof(hid_mouse_input_report_boot_t)) {
-        memcpy(&mouse_report, data, sizeof(hid_mouse_input_report_boot_extended_t));
-    }
-    else {
-        memcpy(&mouse_report, data, sizeof(hid_mouse_input_report_boot_t));
-        mouse_report.scroll_displacement = 0;
-    }
-
-    ESP_LOGD(TAG, "Mouse: %d,%d, wheel: %d buttons: %d %d %d %d %d %d %d %d",
+    ESP_LOGD(TAG, "Mouse(%d): %d,%d, wheel: %d buttons(%x): %d %d %d %d %d %d %d %d",
+        length,
         mouse_report.x_displacement,
         mouse_report.y_displacement,
         mouse_report.scroll_displacement,
+        mouse_report.buttons.val,
         mouse_report.buttons.button1,
         mouse_report.buttons.button2,
         mouse_report.buttons.button3,

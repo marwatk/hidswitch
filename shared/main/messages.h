@@ -58,6 +58,28 @@ typedef struct {
     int8_t scroll_displacement;
 } __attribute__((packed)) hid_mouse_input_report_boot_extended_t;
 
+// This is from an Elcom EX-G Pro using the dongle
+typedef struct {
+    int8_t unknown;
+    union {
+        struct {
+            uint8_t button1:    1;
+            uint8_t button2:    1;
+            uint8_t button3:    1;
+            uint8_t button4:    1;
+            uint8_t button5:    1;
+            uint8_t button6:    1;
+            uint8_t button7:    1;
+            uint8_t button8:    1;
+        };
+        uint8_t val;
+    } buttons;
+    int16_t x;       // Delta X
+    int16_t y;       // Delta Y
+    int8_t wheel;
+    int8_t pan;
+} __attribute__((packed)) hid_mouse_input_report_boot_reverse_engineered_t;
+
 typedef struct {
     union {
         struct {
