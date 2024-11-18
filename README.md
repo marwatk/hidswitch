@@ -185,6 +185,7 @@ where `[number]` is 1-9 and represents `SLV0`-`SLV8`.
 
 To switch to the next connected host device, press and hold <kbd>L Ctrl</kbd> and press <kbd>L Shift</kbd> twice.
 This will skip any boards that don't detect a host device.
+Or, if your mouse has six buttons, button six will switch devices as well.
 
 ### Shared input
 
